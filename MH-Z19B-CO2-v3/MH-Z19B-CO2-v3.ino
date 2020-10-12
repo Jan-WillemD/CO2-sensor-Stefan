@@ -8,6 +8,7 @@
 #include <ESPAsyncWebServer.h>
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
+#include <Adafruit_NeoPixel.h>
 
 char ssid[]     =  "sensor";
 char password[] =  "metenisweten";
@@ -16,6 +17,12 @@ char password[] =  "metenisweten";
 // setup dht11
 #define DHTPIN D1     // Digital pin connected to the DHT sensor
 #define DHTTYPE    DHT11     // DHT 11
+
+// neopixel WS2812b
+#define PIN D2   // LED output pin
+// How many NeoPixels are attached to the Arduino?
+#define NUMPIXELS 1
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(1, PIN, NEO_GRB + NEO_KHZ800);
 
 // co2 sensor
 #define CO2_IN D8   // pwm
@@ -27,6 +34,10 @@ char password[] =  "metenisweten";
 float t = 0.0;
 float h = 0.0;
 int ppm = 0;
+int maxppm = 0;
+
+unsigned long startTime;
+
 
 // initialize sensor classes
 MHZ co2(MH_Z19_RX, MH_Z19_TX, CO2_IN, MHZ19B);
@@ -70,6 +81,11 @@ const char index_html[] PROGMEM = R"rawliteral(
     <span id="ppm">%PPM%</span>
     <sup class="units">ppm</sup>
   </p>
+    <p>
+    <span class="dht-labels">Maximum CO2</span> 
+    <span id="maxppm">%MAXPPM%</span>
+    <sup class="units">ppm</sup>
+  </p>
   <p>
     <span class="dht-labels">Temperature</span> 
     <span id="temperature">%TEMPERATURE%</span>
@@ -90,6 +106,17 @@ setInterval(function ( ) {
     }
   };
   xhttp.open("GET", "/ppm", true);
+  xhttp.send();
+}, 10000 ) ;
+
+setInterval(function ( ) {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      document.getElementById("maxppm").innerHTML = this.responseText;
+    }
+  };
+  xhttp.open("GET", "/maxppm", true);
   xhttp.send();
 }, 10000 ) ;
 
@@ -129,14 +156,33 @@ String processor(const String& var){
   else if(var == "PPM"){
     return String(ppm);
   }
+  else if(var == "MAXPPM"){
+    return String(maxppm);
+  }
   return String();
+}
+
+void NeoBlink(int brightness, int wait)
+{
+  pixels.setPixelColor(0, 0, 0, 0);
+  pixels.show();
+  delay(wait);
+  pixels.setPixelColor(0, 0, brightness, 0);
+  pixels.show();
+  delay(wait);
 }
 
 void setup(){
   // Serial port for debugging purposes
-  Serial.begin(115200);
+  Serial.begin(9600);
   dht.begin();
   pinMode(CO2_IN, INPUT);
+
+  // initalize RGB LED driver
+  pixels.begin();
+
+  // track start time
+  startTime = millis();
   
   // Remove the password parameter, if you want the AP (Access Point) to be open
   boolean result = WiFi.softAP(ssid, password);
@@ -160,6 +206,9 @@ void setup(){
   server.on("/ppm", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/plain", String(ppm).c_str());
   });
+  server.on("/maxppm", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/plain", String(maxppm).c_str());
+  });
   server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/plain", String(int(t)).c_str());
   });
@@ -180,12 +229,37 @@ void loop(){
     previousMillis = currentMillis;
     
     int ppm_uart = co2.readCO2UART();
-    Serial.print("PPMuart: ");
-  
-    if (ppm_uart > 0) {
+    
+    unsigned long secondsRunning = (millis()-startTime)/1000;
+    if (ppm_uart > 0 && secondsRunning>180) {
       ppm = ppm_uart;
-      Serial.print(ppm_uart);
-    } else {
+      Serial.print("PPMuart: ");
+      Serial.println(ppm_uart);
+      if (ppm_uart > 1200 )
+      {
+         pixels.setPixelColor(0, pixels.Color(0,0,180)); // Blue, warning signal
+      }
+      else
+      {
+         pixels.setPixelColor(0, pixels.Color(0,180,0)); // Green
+      }
+
+      if (ppm_uart > maxppm)
+      {
+        maxppm = ppm_uart;
+      }
+      Serial.print(int(secondsRunning/60));
+      Serial.println(" minutes");
+      pixels.show();
+    } 
+    else if(secondsRunning<180)
+    {
+      while(millis()-currentMillis<(interval-100))
+      {
+        NeoBlink(120, 500); // brightness (max 255)  , wait time (millisecond)
+      }
+    }
+    else {
       Serial.print("n/a");
     }
 
