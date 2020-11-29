@@ -184,6 +184,8 @@ void setup() {
   dht.begin();
   pinMode(CO2_IN, INPUT);
 
+  // debug on
+  co2.setDebug(true);
   // initalize RGB LED driver
   pixels.begin();
 

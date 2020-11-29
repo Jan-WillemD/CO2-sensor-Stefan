@@ -39,6 +39,7 @@ class MHZ {
   int readCO2UART();
   int readCO2PWM();
   int getLastTemperature();
+  bool disable_ABC();
 
  private:
   uint8_t _pwmpin, _type, temperature;

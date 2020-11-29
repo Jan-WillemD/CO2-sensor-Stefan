@@ -25,6 +25,7 @@ unsigned long lastRequest = 0;
 
 bool SerialConfigured = true;
 bool PwmConfigured = true;
+bool disableABC_sent = false;     // disable auto calibration after 24hours
 
 MHZ::MHZ(uint8_t rxpin, uint8_t txpin, uint8_t pwmpin, uint8_t type) {
   SoftwareSerial * ss = new SoftwareSerial(rxpin, txpin);
@@ -191,6 +192,7 @@ int MHZ::readCO2UART() {
     Serial.println(ppm_uart);
     Serial.print(F(" # Temperature? "));
     Serial.println(temperature);
+
   }
 
   // Is always 0 for version 14a  and 19b
@@ -204,7 +206,34 @@ int MHZ::readCO2UART() {
   }
 
   _serial->flush();
+
+  disable_ABC();
+
   return ppm_uart;
+}
+
+bool MHZ::disable_ABC(){
+  if (!disableABC_sent) {
+    if (debug) Serial.println(F("disable auto calibration"));
+    byte cmd[9]  = {0xFF,0x01,0x79,0x00,0x00,0x00,0x00,0x00,0x86};        // https://github.com/letscontrolit/ESPEasy/blob/mega/src/_P049_MHZ19.ino
+    byte response[9];  // for answer
+    _serial->write(cmd, 9);  // request PPM CO2
+
+    int waited = 0;
+    while (_serial->available() == 0) {
+      if (debug) Serial.print(".");
+      delay(100);  // wait a short moment to avoid false reading
+      if (waited++ > 10) {
+        if (debug) Serial.println(F("No response after 1 seconds"));
+        _serial->flush();
+        return false;
+      }
+    }
+    if (debug) Serial.println(F("succesfully disabled auto calibration"));
+    disableABC_sent = true;
+    _serial->flush();
+  }
+  return true;
 }
 
 int MHZ::getLastTemperature() {
