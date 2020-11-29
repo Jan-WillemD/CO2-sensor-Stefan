@@ -260,6 +260,12 @@ void loop() {
       Serial.print(int(secondsRunning / 60));
       Serial.println(" minutes");
       pixels.show();
+
+//      if(secondsRunning>300){
+//        co2.calibrate_zero();
+//        pixels.setPixelColor(0, pixels.Color(180, 180, 180)); // white
+//        pixels.show();
+//      }
     }
     else if (secondsRunning < 180)
     {
