@@ -10,11 +10,19 @@
 #include <DHT.h>
 #include <Adafruit_NeoPixel.h>
 
+
+
+// user variables
+const long interval = 10000;    // Updates DHT readings every 10 seconds
+const int co2_sensor_warmup_time = 100;
+const double temp_calib_offset = 1.5; // offset, direct sensor output compensation
+
+// acces point (wifi) configuration
 char ssid[]     =  "sensor";
 char password[] =  "metenisweten";
 
-// NB: SD CARD WILL USE D5, D6, D7 AND D8 (SPI pins)
-// setup dht11
+// Pin declaration of all sensors NB: SD-card uses D5, D6, D7 AND D8 (SPI pins)
+// setup dht11 temp+humidity
 #define DHTPIN D1     // Digital pin connected to the DHT sensor
 #define DHTTYPE    DHT11     // DHT 11
 
@@ -25,10 +33,11 @@ char password[] =  "metenisweten";
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(1, PIN, NEO_GRB + NEO_KHZ800);
 
 // co2 sensor
-#define CO2_IN D8   // pwm
+#define CO2_IN D3   // pwm - D3 change to D8 for upload problems?
 // pin for uart reading
 #define MH_Z19_RX D4  // D7
 #define MH_Z19_TX D0  // D6
+
 
 // current temperature & humidity, updated in loop()
 float t = 0.0;
@@ -37,7 +46,6 @@ int ppm = 0;
 int maxppm = 0;
 
 unsigned long startTime;
-
 
 // initialize sensor classes
 MHZ co2(MH_Z19_RX, MH_Z19_TX, CO2_IN, MHZ19B);
@@ -50,8 +58,6 @@ AsyncWebServer server(80);
 // The value will quickly become too large for an int to store
 unsigned long previousMillis = 0;    // will store last time DHT was updated
 
-// Updates DHT readings every 10 seconds
-const long interval = 10000;  
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
@@ -145,18 +151,18 @@ setInterval(function ( ) {
 </html>)rawliteral";
 
 // Replaces placeholder with DHT values
-String processor(const String& var){
+String processor(const String& var) {
   //Serial.println(var);
-  if(var == "TEMPERATURE"){
-    return String(int(t));
+  if (var == "TEMPERATURE") {
+    return String(int(round(t)));
   }
-  else if(var == "HUMIDITY"){
+  else if (var == "HUMIDITY") {
     return String(int(h));
   }
-  else if(var == "PPM"){
+  else if (var == "PPM") {
     return String(ppm);
   }
-  else if(var == "MAXPPM"){
+  else if (var == "MAXPPM") {
     return String(maxppm);
   }
   return String();
@@ -172,7 +178,7 @@ void NeoBlink(int brightness, int wait)
   delay(wait);
 }
 
-void setup(){
+void setup() {
   // Serial port for debugging purposes
   Serial.begin(9600);
   dht.begin();
@@ -183,10 +189,10 @@ void setup(){
 
   // track start time
   startTime = millis();
-  
+
   // Remove the password parameter, if you want the AP (Access Point) to be open
   boolean result = WiFi.softAP(ssid, password);
-  if(result == true)
+  if (result == true)
   {
     Serial.println("Access point Ready");
   }
@@ -200,61 +206,62 @@ void setup(){
   Serial.println(IP);
 
   // Route for root / web page
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
     request->send_P(200, "text/html", index_html, processor);
   });
-  server.on("/ppm", HTTP_GET, [](AsyncWebServerRequest *request){
+  server.on("/ppm", HTTP_GET, [](AsyncWebServerRequest * request) {
     request->send_P(200, "text/plain", String(ppm).c_str());
   });
-  server.on("/maxppm", HTTP_GET, [](AsyncWebServerRequest *request){
+  server.on("/maxppm", HTTP_GET, [](AsyncWebServerRequest * request) {
     request->send_P(200, "text/plain", String(maxppm).c_str());
   });
-  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request){
+  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest * request) {
     request->send_P(200, "text/plain", String(int(t)).c_str());
   });
-  server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request){
+  server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest * request) {
     request->send_P(200, "text/plain", String(int(h)).c_str());
   });
-  
+
 
   // Start server
   server.begin();
 }
- 
-void loop(){  
+
+void loop() {
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis >= interval) {
-      
+
     // save the last time you updated the DHT values
     previousMillis = currentMillis;
-    
+
     int ppm_uart = co2.readCO2UART();
-    
-    unsigned long secondsRunning = (millis()-startTime)/1000;
-    if (ppm_uart > 0 && secondsRunning>180) {
+
+
+    unsigned long secondsRunning = (millis() - startTime) / 1000;
+    if (ppm_uart > 0 && secondsRunning > co2_sensor_warmup_time) {
       ppm = ppm_uart;
       Serial.print("PPMuart: ");
       Serial.println(ppm_uart);
       if (ppm_uart > 1200 )
       {
-         pixels.setPixelColor(0, pixels.Color(0,0,180)); // Blue, warning signal
+        pixels.setPixelColor(0, pixels.Color(0, 0, 180)); // Blue, warning signal
       }
       else
       {
-         pixels.setPixelColor(0, pixels.Color(0,180,0)); // Green
+        pixels.setPixelColor(0, pixels.Color(0, 180, 0)); // Green
       }
 
       if (ppm_uart > maxppm)
       {
         maxppm = ppm_uart;
       }
-      Serial.print(int(secondsRunning/60));
+      Serial.print(int(secondsRunning / 60));
       Serial.println(" minutes");
       pixels.show();
-    } 
-    else if(secondsRunning<180)
+    }
+    else if (secondsRunning < 180)
     {
-      while(millis()-currentMillis<(interval-100))
+      while (millis() - currentMillis < (interval - 100))
       {
         NeoBlink(120, 500); // brightness (max 255)  , wait time (millisecond)
       }
@@ -264,25 +271,27 @@ void loop(){
     }
 
     // Read temperature as Celsius (the default)
-    float newT = dht.readTemperature();
+    float newT = dht.readTemperature() - temp_calib_offset;  // correct sensor drift
     // Read temperature as Fahrenheit (isFahrenheit = true)
     //float newT = dht.readTemperature(true);
     // if temperature read failed, don't change t value
     if (isnan(newT)) {
-      Serial.println("Failed to read from DHT sensor!");
+      Serial.println("Failed to read temperature from DHT sensor!");
     }
     else {
       t = newT;
+      Serial.print("Temperature: ");
       Serial.println(t);
     }
     // Read Humidity
     float newH = dht.readHumidity();
-    // if humidity read failed, don't change h value 
+    // if humidity read failed, don't change h value
     if (isnan(newH)) {
-      Serial.println("Failed to read from DHT sensor!");
+      Serial.println("Failed to read humidity from DHT sensor!");
     }
     else {
       h = newH;
+      Serial.print("Humidity: ");
       Serial.println(h);
     }
   }
