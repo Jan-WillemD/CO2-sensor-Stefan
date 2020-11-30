@@ -16,6 +16,12 @@ D1: DHT11 (wit) - data
 3v3: dht + (oranje)
 Pullup WEERSTAND tussen DATA en +
 
+# install for filesystem:
+esp8266 library
+
+install esp8266fs-plugin: https://github.com/esp8266/arduino-esp8266fs-plugin/releases
+download, unzip and put jar file in tool folder in arduino directory
+
 
 
 
